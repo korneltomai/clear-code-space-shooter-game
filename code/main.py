@@ -52,8 +52,9 @@ class Laser(pygame.sprite.Sprite):
             self.kill()
 
 class Meteor(pygame.sprite.Sprite):
-    def __init__(self, groups, surf, pos):
+    def __init__(self, groups, scoreDisplay, surf, pos):
         super().__init__(groups)
+        self.scoreDisplay = scoreDisplay
         self.original_surf = surf
         self.image = self.original_surf
         self.rect = self.image.get_frect(center = pos)
@@ -70,6 +71,66 @@ class Meteor(pygame.sprite.Sprite):
 
         if self.rect.top > WINDOW_HEIGHT:
             self.kill()
+
+    def hit(self):
+        scoreDisplay.score += 5
+        self.kill()
+
+class BigMeteor(pygame.sprite.Sprite):
+    def __init__(self, groups, scoreDisplay, surf, pos):
+        super().__init__(groups)
+        self.scoreDisplay = scoreDisplay
+        self.original_surf = surf
+        self.image = self.original_surf
+        self.rect = self.image.get_frect(center = pos)
+        self.direction = pygame.Vector2(uniform(-0.5, 0.5), 1)
+        self.speed = randint(100, 125)
+        self.rotation = 0
+        self.rotation_speed = randint(-25, 25)
+        self.hit_points = 3
+
+    def update(self, delta_time):
+        self.rect.center += self.direction * self.speed * delta_time
+        self.rotation += self.rotation_speed * delta_time
+        self.image = pygame.transform.rotozoom(self.original_surf, self.rotation, 1)
+        self.rect = self.image.get_frect(center = self.rect.center)
+
+        if self.rect.top > WINDOW_HEIGHT:
+            self.kill()
+
+    def hit(self):
+        self.hit_points -= 1
+        if self.hit_points == 0:
+            scoreDisplay.score += 25 
+            self.kill()
+
+            for direction in [(0, -1), (1, -1), (1, 0), (1, 1), (0, 1), (-1, 1), (-1, 0), (-1, -1)]: 
+                SmallMeteor((all_sprites, meteor_sprites), scoreDisplay, pygame.transform.scale_by(meteor_surf, 0.5), self.rect.center, pygame.Vector2(direction[0], direction[1]))
+
+class SmallMeteor(pygame.sprite.Sprite):
+    def __init__(self, groups, scoreDisplay, surf, pos, dir):
+        super().__init__(groups)
+        self.scoreDisplay = scoreDisplay
+        self.original_surf = surf
+        self.image = self.original_surf
+        self.rect = self.image.get_frect(center = pos)
+        self.direction = dir
+        self.speed = randint(600, 1000)
+        self.rotation = 0
+        self.rotation_speed = randint(-150, 150)
+
+    def update(self, delta_time):
+        self.rect.center += self.direction * self.speed * delta_time
+        self.rotation += self.rotation_speed * delta_time
+        self.image = pygame.transform.rotozoom(self.original_surf, self.rotation, 1)
+        self.rect = self.image.get_frect(center = self.rect.center)
+
+        if self.rect.top > WINDOW_HEIGHT or self.rect.bottom < 0 or self.rect.right > WINDOW_WIDTH or self.rect.left < 0:
+            self.kill()
+
+    def hit(self):
+        scoreDisplay.score += 1
+        self.kill()
 
 class AnimatedExplosion(pygame.sprite.Sprite):
     def __init__(self, groups, frames, pos):
@@ -88,6 +149,17 @@ class AnimatedExplosion(pygame.sprite.Sprite):
         else:
             self.kill()
 
+class ScoreDisplay(pygame.sprite.Sprite):
+    def __init__(self, groups):
+        super().__init__(groups)
+        self.image = font.render("0", True, (240, 240, 240))
+        self.rect = self.image.get_rect(midbottom = (WINDOW_WIDTH / 2, WINDOW_HEIGHT - 50))
+        self.score = 0
+
+    def update(self, delta_time):
+        self.image = font.render(str(self.score), True, (240, 240, 240))
+
+
 def check_collisions():
     global running
 
@@ -95,16 +167,11 @@ def check_collisions():
         running = False
 
     for laser in laser_sprites:
-        if pygame.sprite.spritecollide(laser, meteor_sprites, True):
+        hit_meteors = pygame.sprite.spritecollide(laser, meteor_sprites, False, pygame.sprite.collide_mask)
+        if hit_meteors:
             laser.kill()
             AnimatedExplosion(all_sprites, explosion_frames, laser.rect.midtop)
-
-def display_score():
-    current_time = int(pygame.time.get_ticks() / 100)
-    text_surf = font.render(str(current_time), True, (240, 240, 240))
-    text_rect = text_surf.get_rect(midbottom = (WINDOW_WIDTH / 2, WINDOW_HEIGHT - 50))
-    display_surface.blit(text_surf, text_rect)
-    pygame.draw.rect(display_surface, (240, 240, 240), text_rect.inflate(20, 10).move(0, -8), 5, 10)
+            hit_meteors[0].hit()
 
 # general setup
 pygame.init()
@@ -138,10 +205,14 @@ for i in range(20):
     random_pos = (randint(0, WINDOW_WIDTH), randint(0, WINDOW_HEIGHT))
     Star(all_sprites, star_surf, random_pos)
 player = Player(all_sprites)
+scoreDisplay = ScoreDisplay(all_sprites)
 
 # custom events
 meteor_event = pygame.event.custom_type()
 pygame.time.set_timer(meteor_event, 400)
+
+score_event = pygame.event.custom_type()
+pygame.time.set_timer(score_event, 1000)
 
 # game loop
 running = True
@@ -154,15 +225,23 @@ while running:
             running = False
         if event.type == meteor_event:
             random_pos = (randint(100, WINDOW_WIDTH - 100), randint(-200, -100))
-            Meteor((all_sprites, meteor_sprites), meteor_surf, random_pos)
+            if (uniform(0, 100) < 10):
+                print("BIG ONE INCOMING")
+                BigMeteor((all_sprites, meteor_sprites), scoreDisplay, pygame.transform.scale2x(meteor_surf), random_pos)
+            else:
+                Meteor((all_sprites, meteor_sprites), scoreDisplay, meteor_surf, random_pos)
+        if event.type == score_event:
+            scoreDisplay.score += 1
 
     # update
     all_sprites.update(delta_time)
 
     # draw the game
+    display_surface.blit(scoreDisplay.image, scoreDisplay.rect)
+    pygame.draw.rect(display_surface, (240, 240, 240), scoreDisplay.rect.inflate(20, 10).move(0, -8), 5, 10)
+
     display_surface.fill("#3a2e3f")
     all_sprites.draw(display_surface)
-    display_score()
 
     # collision
     check_collisions()
