@@ -12,6 +12,8 @@ class Player(pygame.sprite.Sprite):
         self.direction = pygame.math.Vector2()
         self.can_shoot = True
         self.laser_shoot_time = 0
+        self.powered_up = False
+        self.powered_up_time = 0
 
     def update(self, delta_time):
         keys = pygame.key.get_pressed()
@@ -20,19 +22,41 @@ class Player(pygame.sprite.Sprite):
         self.direction = self.direction.normalize() if self.direction else self.direction
         self.rect.center += self.direction * 350 * delta_time
 
-        recent_keys = pygame.key.get_just_pressed()
-        if recent_keys[pygame.K_SPACE] and self.can_shoot:
-            Laser((all_sprites, laser_sprites), laser_surf, self.rect.midtop)
-            self.can_shoot = False
-            self.laser_shoot_time = pygame.time.get_ticks()
-            laser_sound.play()
-        self.__update_laser_timer()
+        self.__handle_shooting()
 
-    def __update_laser_timer(self):
+    def activate_power_up(self):
+        self.powered_up = True
+        self.powered_up_time = pygame.time.get_ticks()
+
+    def __update_laser_timer(self, cooldown):
         if not self.can_shoot:
             current_time = pygame.time.get_ticks()
-            if current_time - self.laser_shoot_time >= 1000:
+            if current_time - self.laser_shoot_time >= cooldown:
                 self.can_shoot = True
+
+    def __update_powerup_timer(self):
+        if self.powered_up:
+            current_time = pygame.time.get_ticks()
+            if current_time - self.powered_up_time >= 5000:
+                self.powered_up = False
+
+    def  __shoot_laser(self):
+        Laser((all_sprites, laser_sprites), laser_surf, self.rect.midtop)
+        self.can_shoot = False
+        self.laser_shoot_time = pygame.time.get_ticks()
+        laser_sound.play()
+
+    def __handle_shooting(self):
+        if self.powered_up:
+            if self.can_shoot:
+                self.__shoot_laser()
+            self.__update_laser_timer(200)
+            self.__update_powerup_timer()
+        else:
+            recent_keys = pygame.key.get_just_pressed()
+            if recent_keys[pygame.K_SPACE] and self.can_shoot:
+                self.__shoot_laser()
+            self.__update_laser_timer(1000)
 
 class Star(pygame.sprite.Sprite):
     def __init__(self, groups, surf, pos):
@@ -59,7 +83,7 @@ class Meteor(pygame.sprite.Sprite):
         self.image = self.original_surf
         self.rect = self.image.get_frect(center = pos)
         self.direction = pygame.Vector2(uniform(-0.5, 0.5), 1)
-        self.speed = randint(400, 750)
+        self.speed = randint(400, 650)
         self.rotation = 0
         self.rotation_speed = randint(-100, 100)
 
@@ -84,7 +108,7 @@ class BigMeteor(pygame.sprite.Sprite):
         self.image = self.original_surf
         self.rect = self.image.get_frect(center = pos)
         self.direction = pygame.Vector2(uniform(-0.5, 0.5), 1)
-        self.speed = randint(100, 125)
+        self.speed = randint(75, 125)
         self.rotation = 0
         self.rotation_speed = randint(-25, 25)
         self.hit_points = 3
@@ -107,6 +131,9 @@ class BigMeteor(pygame.sprite.Sprite):
             for direction in [(0, -1), (1, -1), (1, 0), (1, 1), (0, 1), (-1, 1), (-1, 0), (-1, -1)]: 
                 SmallMeteor((all_sprites, meteor_sprites), scoreDisplay, pygame.transform.scale_by(meteor_surf, 0.5), self.rect.center, pygame.Vector2(direction[0], direction[1]))
 
+            if randint(0, 100) < 10:
+                PowerUp((all_sprites, powerup_sprites), self.rect.center)
+
 class SmallMeteor(pygame.sprite.Sprite):
     def __init__(self, groups, scoreDisplay, surf, pos, dir):
         super().__init__(groups)
@@ -115,7 +142,7 @@ class SmallMeteor(pygame.sprite.Sprite):
         self.image = self.original_surf
         self.rect = self.image.get_frect(center = pos)
         self.direction = dir
-        self.speed = randint(600, 1000)
+        self.speed = randint(500, 800)
         self.rotation = 0
         self.rotation_speed = randint(-150, 150)
 
@@ -160,6 +187,19 @@ class ScoreDisplay(pygame.sprite.Sprite):
         self.image = font.render(str(self.score), True, (240, 240, 240))
 
 
+class PowerUp(pygame.sprite.Sprite):
+    def __init__(self, groups, pos):
+        super().__init__(groups)
+        self.image = pygame.Surface((40, 40), pygame.SRCALPHA)
+        self.rect = self.image.get_frect(center = pos)
+        self.position = pos
+
+    def update(self, delta_time):
+        pygame.draw.aacircle(self.image, "red", (20, 20), 20)
+        self.rect.centery += 200 * delta_time
+        if self.rect.top > WINDOW_HEIGHT:
+            self.kill()
+
 def check_collisions():
     global running
 
@@ -172,6 +212,9 @@ def check_collisions():
             laser.kill()
             AnimatedExplosion(all_sprites, explosion_frames, laser.rect.midtop)
             hit_meteors[0].hit()
+
+    if pygame.sprite.spritecollide(player, powerup_sprites, True, pygame.sprite.collide_mask):
+        player.activate_power_up()
 
 # general setup
 pygame.init()
@@ -200,6 +243,7 @@ game_music.play(-1)
 all_sprites = pygame.sprite.Group()
 meteor_sprites = pygame.sprite.Group()
 laser_sprites = pygame.sprite.Group()
+powerup_sprites = pygame.sprite.Group()
 
 for i in range(20):
     random_pos = (randint(0, WINDOW_WIDTH), randint(0, WINDOW_HEIGHT))
@@ -225,8 +269,7 @@ while running:
             running = False
         if event.type == meteor_event:
             random_pos = (randint(100, WINDOW_WIDTH - 100), randint(-200, -100))
-            if (uniform(0, 100) < 10):
-                print("BIG ONE INCOMING")
+            if (randint(0, 100) < 10):
                 BigMeteor((all_sprites, meteor_sprites), scoreDisplay, pygame.transform.scale2x(meteor_surf), random_pos)
             else:
                 Meteor((all_sprites, meteor_sprites), scoreDisplay, meteor_surf, random_pos)
