@@ -191,11 +191,11 @@ class PowerUp(pygame.sprite.Sprite):
     def __init__(self, groups, pos):
         super().__init__(groups)
         self.image = pygame.Surface((40, 40), pygame.SRCALPHA)
+        pygame.draw.aacircle(self.image, "red", (20, 20), 20)
         self.rect = self.image.get_frect(center = pos)
         self.position = pos
 
     def update(self, delta_time):
-        pygame.draw.aacircle(self.image, "red", (20, 20), 20)
         self.rect.centery += 200 * delta_time
         if self.rect.top > WINDOW_HEIGHT:
             self.kill()
